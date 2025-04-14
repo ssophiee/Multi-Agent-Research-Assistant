@@ -4,12 +4,15 @@ from fastapi.staticfiles import StaticFiles
 from io import BytesIO
 from fastapi.templating import Jinja2Templates
 
+from camel.toolkits import FunctionTool
+from camel.agents import ChatAgent
+
+from agents import research_pipeline, create_pdf
+
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
 
-# app.mount("/", StaticFiles(directory=""), name="static")
-
-document_storage = {}  # In-memory "doc" to return
+query_storage = {} 
 
 @app.get("/", response_class=HTMLResponse)
 async def get_home(request: Request):
@@ -17,13 +20,20 @@ async def get_home(request: Request):
 
 @app.post("/", response_class=HTMLResponse)
 async def handle_search(request: Request, query: str = Form(...)):
-    document_storage["last_doc"] = f"You searched for: {query}"
-    return templates.TemplateResponse("index.html", {"request": request, "result": document_storage["last_doc"]})
+    query_storage["last_query"] = f"You searched for: {query}"
+    result = research_pipeline(query)
+    query_storage["result"] = result
+    return templates.TemplateResponse("index.html", {"request": request, "result": query_storage["result"]})
 
 @app.get("/download")
 async def download_file():
-    content = document_storage.get("last_doc", "No content available.")
-    buffer = BytesIO(content.encode("utf-8"))
-    return StreamingResponse(buffer, media_type="text/plain", headers={
-        "Content-Disposition": "attachment; filename=result.txt"
+    pdf_filename = "summary.pdf"
+    content = query_storage.get("result", "No content available.")
+    create_pdf(content, pdf_filename)  
+    buffer = BytesIO()
+    with open(pdf_filename, "rb") as f:
+        buffer.write(f.read())
+    buffer.seek(0)
+    return StreamingResponse(buffer, media_type="application/pdf", headers={
+        "Content-Disposition": f"attachment; filename={pdf_filename}"
     })
