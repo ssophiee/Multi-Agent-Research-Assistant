@@ -13,3 +13,20 @@ install the required packages using pip:
 ```bash
 pip install -r requirements.txt
 ```
+## Set up interface
+1. Create a `.env` file in the root directory of the project.
+2. Add the following lines to the `.env` file:
+```bash
+OPENAI_API_KEY=your_openai_api_key
+```
+3. Run the main script:
+```bash
+uvicorn main:app --reload --port=8005 --host=0.0.0.0 
+```
+4. Open your web browser and navigate to `http://localhost:8005/` to access the API documentation and test the endpoints.
+
+## Usage
+1. Start the server using the command mentioned above.
+2. Use it to submit a research topic.
+3. The system will process the request, query the search engines, collect papers, and generate summaries.
+4. The results will be returned in JSON format, including the summaries of the relevant papers.
