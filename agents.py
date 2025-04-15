@@ -22,27 +22,23 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY
 logging.getLogger("pdfminer").setLevel(logging.ERROR)
 
-
-def search_arxiv(query: str):
+def search_arxiv_tool(query: str, max_results: int = 10) -> str:
     """
-    Searches ArXiv for papers based on the query.
+    Searches ArXiv for papers matching the query.
     """
     base_url = "https://export.arxiv.org/api/query"
     params = {
         "search_query": query,
         "start": 0,
-        "max_results": 10
+        "max_results": max_results
     }
     response = requests.get(base_url, params=params)
+    
     return response.text
-
-def search_arxiv_tool(query: str):
-    """Searches ArXiv for papers matching the query."""
-    return search_arxiv(query)
 
 def duckduckgo_wrapper(query: str, max_results: int = 10) -> str:
     """
-    Perform a DuckDuckGo search.
+    Searches DuckDuckGo for papers matching the query.
 
     Args:
     - query: The search query.
