@@ -19,7 +19,6 @@ import logging
 
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-print(OPENAI_API_KEY)
 os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY
 logging.getLogger("pdfminer").setLevel(logging.ERROR)
 
@@ -32,7 +31,7 @@ def search_arxiv(query: str):
     params = {
         "search_query": query,
         "start": 0,
-        "max_results": 20
+        "max_results": 10
     }
     response = requests.get(base_url, params=params)
     return response.text
@@ -88,8 +87,6 @@ class SummarizerAgent:
         self.memory.append({"role": "assistant", "content": response})
 
     def summarize(self, topic, data):
-        # based on the mode ,
-        # add it to the prompt
 
         prompt = f"""
         You are a research summarization assistant. Your task is to summarize the sources gathered for this topic: {topic}.
@@ -101,7 +98,7 @@ class SummarizerAgent:
 
         !!! IMPORTANT Example as a reference how it should look EXACTLY:
 
-        <b>Arxiv Papers:</b>:
+        <b>Arxiv Papers:</b>
 
         1. <b>LLM Multi-Agent Systems: Challenges and Open Problems</b><br/>
         <b>Description:</b> This paper explores existing works on multi-agent systems, identifying challenges that are still open.<br/>
@@ -111,7 +108,7 @@ class SummarizerAgent:
         how MCP enhances system integration and functionality
         <b>Link:</b> [Read the paper](https://arxiv.org/abs/2504.03767)
 
-        <b>News Articles</b>:
+        <b>News Articles:</b>
 
         1. <b>AI Trends 2025: AI Agents and Multi-Agent Systems with Victor Dibia - Spotify</b><br/>
         <b>Description:</b> Victor Dibia, a principal research software engineer at Microsoft Research, discusses key trends in AI agents.<br/>
@@ -164,7 +161,6 @@ class QualityCheckerAgent:
 
     Instructions:
     - Default to `"resubmit"` unless the results are clearly sufficient in every way
-    - Default to `"resubmit"` if there are less than 5 papers from Arxiv in total.
     - If any key areas are missing, underdeveloped, outdated, or weakly supported — return `"resubmit"`.
     - Only return `"summary"` if the research is clearly comprehensive, highly relevant, and no further search is needed.
 
@@ -213,14 +209,12 @@ class CommunicationAgent:
     self.quality_checker = quality_checker_agent
     self.searcher = search_agent
     self.summarizer = summarizer_agent
-    self.mode = None
     self.memory = []
 
   def handle_query(self, query):
       self.memory.append({"role": "user", "content": query})
 
       print("🔍 Searching...")
-      self.mode = "search"
       current_search = self.searcher.step(query).msgs[0].content
       self.memory.append({"role": "search", "content": current_search})
 
@@ -234,7 +228,6 @@ class CommunicationAgent:
       while not self.quality_checker.search_result_approved:
           print("💯 Checking Quality...")
           self.quality_checker.search_history.append(current_search)
-          print(len(self.quality_checker.search_history))
           quality_estimation = self.quality_checker.evaluate_quality(query, self.quality_checker.format_search_history())
           self.memory.append({"role": "quality_checker", "content": quality_estimation})
 
@@ -247,7 +240,6 @@ class CommunicationAgent:
               print("📚 New search results received.")
           else:
               print("🧠 Summarizing...")
-              self.mode = "summarize"
               summary = self.summarizer.summarize(query, self.quality_checker.format_search_history())
               self.memory.append({"role": "summarizer", "content": summary})
               break 
@@ -292,7 +284,6 @@ def create_pdf(text, filename):
 
     doc.build(content)
 
-
 # Initialize the agents
 duck_tool = FunctionTool(duckduckgo_wrapper)
 arxiv_tool = FunctionTool(search_arxiv_tool)
@@ -306,6 +297,6 @@ quality_checker = QualityCheckerAgent(model)
 communication_agent = CommunicationAgent(quality_checker, search_agent, summarizer)
 
 def research_pipeline(query):
-    topic = f"Recent papers on {query}"
+    topic = f"Find recent papers on {query} (focus on arxiv papers, but also other sources)"
     result = communication_agent.handle_query(topic)
     return result
