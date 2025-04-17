@@ -7,3 +7,4 @@ camel-ai[web_tools]==0.2.44
 openai==1.70.0
 requests==2.32.3
 python-dotenv==1.1.0
+tiktoken==0.7.0

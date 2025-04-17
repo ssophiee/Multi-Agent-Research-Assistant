@@ -16,6 +16,7 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
 from reportlab.lib import colors
 import logging
+import tiktoken
 
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
@@ -49,31 +50,24 @@ def duckduckgo_wrapper(query: str, max_results: int = 10) -> str:
     """
     return SearchToolkit().search_duckduckgo(query=query, max_results=max_results)
 
-class ModelFactory:
-    @staticmethod
-    def create(model_type, api_key, temperature=0.3):
-        client = OpenAI(api_key=api_key)
-        return GPTAgent(client, model_type, temperature)
+class SearchAgent:
+    def __init__(self):
+        self.sys_msg = "You are the search agent who finds the most relevant and high quality resources for the given question."
+        self.duck_tool = FunctionTool(duckduckgo_wrapper)
+        self.arxiv_tool = FunctionTool(search_arxiv_tool)
 
-class GPTAgent:
-    def __init__(self, client, model_name, temperature):
-        self.client = client
-        self.model_name = model_name
-        self.temperature = temperature
+        tools = [self.duck_tool, self.arxiv_tool]
+        self.model = ChatAgent(system_message=self.sys_msg, tools=tools)
 
-    def chat(self, messages):
-        response = self.client.chat.completions.create(
-            model=self.model_name,
-            temperature=self.temperature,
-            messages=messages
-        )
-        return response.choices[0].message.content.strip()
-
-
+    def step(self, query):
+        return self.model.step(query)
+    
 class SummarizerAgent:
     """ description ... """
-    def __init__(self, model):
-        self.model = model
+    def __init__(self, model_name, api_key, temperature):
+        self.client = OpenAI(api_key=api_key)
+        self.model_name = model_name
+        self.temperature = temperature
         self.memory = []
 
     def add_event(self, prompt: str):
@@ -124,7 +118,11 @@ class SummarizerAgent:
         """
 
         self.add_event(prompt)
-        response = self.model.chat(self.memory[-10:])
+        response = self.client.chat.completions.create(
+            model=self.model_name,
+            messages=self.memory[-10:], 
+            temperature=self.temperature
+        ).choices[0].message.content.strip()
         self.add_response(response)
 
         return response
@@ -132,8 +130,10 @@ class SummarizerAgent:
 class QualityCheckerAgent:
   """ description ... """
 
-  def __init__(self, model):
-    self.model = model
+  def __init__(self, model_name, api_key, temperature):
+    self.client = OpenAI(api_key=api_key)
+    self.model_name = model_name
+    self.temperature = temperature
     self.search_result_approved = False
     self.memory = []
     self.search_history = []
@@ -149,7 +149,7 @@ class QualityCheckerAgent:
     # in case quality checker doesnt return dictionay correctly, it will fall down to summary of the current search queries
 
     self.search_history.append(search_result)
-    formatted_search_results = self.format_search_history() # str(search_result) # self.format_search_history()
+    formatted_search_results = self.format_search_history() 
     prompt = f"""You are acting as a **strict** quality control agent responsible for validating research relevance and completeness.
 
     If the following research results are anything less than **comprehensive, highly relevant, and up-to-date**, your job is to **reject them** and request a refined search.
@@ -178,7 +178,11 @@ class QualityCheckerAgent:
     self.add_event(prompt)
 
     try:
-        response = self.model.chat(self.memory[-2:])
+        response = self.client.chat.completions.create(
+            model=self.model_name,
+            messages=self.memory[-2:], 
+            temperature=self.temperature
+        ).choices[0].message.content.strip()
         response = json.loads(response)
         if not isinstance(response, dict):
             raise ValueError("Response is not a dictionary")
@@ -236,12 +240,23 @@ class CommunicationAgent:
               print("📚 New search results received.")
           else:
               print("🧠 Summarizing...")
-              summary = self.summarizer.summarize(query, self.quality_checker.format_search_history())
+              trimmed_memory = trim_to_token_limit(self.quality_checker.format_search_history())
+              summary = self.summarizer.summarize(query, trimmed_memory)
               self.memory.append({"role": "summarizer", "content": summary})
               break 
 
       return summary
 
+MAX_TOKENS = 16385
+def trim_to_token_limit(text, model="gpt-3.5-turbo", max_tokens=MAX_TOKENS):
+    enc = tiktoken.encoding_for_model(model)
+    tokens = enc.encode(text)
+    if len(tokens) <= max_tokens:
+        return text
+    else:
+        trimmed = enc.decode(tokens[:max_tokens])
+        return trimmed
+    
 def create_pdf(text, filename):
     """ Creates a PDF file from the given text."""
     doc = SimpleDocTemplate(filename, pagesize=letter,
@@ -281,15 +296,11 @@ def create_pdf(text, filename):
     doc.build(content)
 
 # Initialize the agents
-duck_tool = FunctionTool(duckduckgo_wrapper)
-arxiv_tool = FunctionTool(search_arxiv_tool)
-tools = [duck_tool, arxiv_tool]
-sys_msg = "You are the search agent who finds the most relevant and high quality resources for the given question"
-search_agent = ChatAgent(system_message=sys_msg, tools=tools)
-
-model = ModelFactory.create("gpt-3.5-turbo", api_key=OPENAI_API_KEY, temperature=0.2)
-summarizer = SummarizerAgent(model)
-quality_checker = QualityCheckerAgent(model)
+    
+MODEL_NAME = "gpt-3.5-turbo"
+search_agent = SearchAgent()
+summarizer = SummarizerAgent(MODEL_NAME, api_key=OPENAI_API_KEY, temperature=0.2)
+quality_checker = QualityCheckerAgent(MODEL_NAME, api_key=OPENAI_API_KEY, temperature=0.2)
 communication_agent = CommunicationAgent(quality_checker, search_agent, summarizer)
 
 def research_pipeline(query):
