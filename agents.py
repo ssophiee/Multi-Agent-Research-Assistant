@@ -247,6 +247,7 @@ class CommunicationAgent:
 
       return summary
 
+# TO DO: this function is trimming incorrectly, fix it.
 MAX_TOKENS = 16385
 def trim_to_token_limit(text, model="gpt-3.5-turbo", max_tokens=MAX_TOKENS):
     enc = tiktoken.encoding_for_model(model)
